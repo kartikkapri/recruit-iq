@@ -110,24 +110,55 @@ AI_EDU_FIELDS = {
 
 # ── Gate 1: Honeypot / Keyword-Stuffer Filter ─────────────────────────────
 
-def gate1_pass(profile: dict, skills: list) -> bool:
-    """Return False (drop) if candidate fails the honeypot/stuffer check."""
+# Grace period (months) added to total_exp_months before flagging a skill as impossible.
+# 6 months was too tight — candidates with freelance/overlap history were wrongly dropped.
+# Raised to 12 months to allow a full year of concurrent / pre-employment skill use.
+SKILL_DURATION_GRACE_MONTHS = 12
+
+
+def gate1_pass(profile: dict, skills: list, cid: str = "", debug: bool = False) -> bool:
+    """
+    Return False (drop) if candidate fails the honeypot / keyword-stuffer check.
+
+    Rule 1 — Impossible skill duration:
+        Any skill whose duration_months > (total_experience_months + GRACE)
+        is physically impossible → candidate fabricated or inflated the timeline.
+
+    Rule 2 — Non-tech title + 3 or more AI skills:
+        A Sales/HR/Marketing/Content title with a cluster of deep AI skills
+        is a classic keyword-stuffer pattern.
+    """
     yoe = profile.get("years_of_experience") or 0
     total_exp_months = yoe * 12
 
-    # Rule 1 — skill duration exceeds total experience by >6 months
+    # ── Rule 1: skill duration vs total experience ──────────────────────────
     for sk in skills:
-        dur = sk.get("duration_months") or 0
-        if dur > total_exp_months + 6:
+        dur  = sk.get("duration_months") or 0
+        name = sk.get("name") or "unknown"
+        limit = total_exp_months + SKILL_DURATION_GRACE_MONTHS
+        if dur > limit:
+            if debug:
+                print(
+                    f"[G1-DROP] {cid} | skill_duration_mismatch | "
+                    f"skill='{name}'  dur={dur}m  >  "
+                    f"exp={total_exp_months:.0f}m + grace={SKILL_DURATION_GRACE_MONTHS}m = {limit:.0f}m"
+                )
             return False
 
-    # Rule 2 — non-tech current title with multiple AI skills
+    # ── Rule 2: non-tech title with AI skill cluster ────────────────────────
     title_lower = (profile.get("current_title") or "").lower()
     is_non_tech = any(word in title_lower for word in NON_TECH_TITLES)
     if is_non_tech:
         cand_skill_names = {(sk.get("name") or "").lower() for sk in skills}
         ai_hit_count = sum(1 for s in cand_skill_names if s in AI_SKILLS_SET)
         if ai_hit_count >= 3:
+            if debug:
+                matched = [s for s in cand_skill_names if s in AI_SKILLS_SET]
+                print(
+                    f"[G1-DROP] {cid} | keyword_stuffer | "
+                    f"title='{profile.get('current_title')}'  "
+                    f"ai_skills_found={matched}"
+                )
             return False
 
     return True
@@ -247,7 +278,12 @@ def build_reasoning(profile: dict, skills: list, signals: dict) -> str:
 
 # ── Main pipeline ─────────────────────────────────────────────────────────
 
-def main():
+def main(debug_drops: bool = False):
+    """
+    Main pipeline.
+    Set debug_drops=True (or run with --debug) to print a drop-reason line
+    for every candidate rejected by Gate 1 or Gate 2.
+    """
     candidates_scored = []
     total = dropped_g1 = dropped_g2 = 0
 
@@ -262,6 +298,8 @@ def main():
                 rec = json.loads(raw_line)
             except json.JSONDecodeError:
                 dropped_g1 += 1
+                if debug_drops:
+                    print(f"[G1-DROP] line {total} | json_parse_error")
                 continue
 
             cid     = rec.get("candidate_id", f"UNKNOWN_{total}")
@@ -271,14 +309,19 @@ def main():
             certs   = rec.get("certifications") or []
             edu     = rec.get("education") or []
 
-            # Gate 1
-            if not gate1_pass(profile, skills):
+            # Gate 1 — pass cid and debug flag so drop reasons are printed
+            if not gate1_pass(profile, skills, cid=cid, debug=debug_drops):
                 dropped_g1 += 1
                 continue
 
             # Gate 2
             if not gate2_pass(signals):
                 dropped_g2 += 1
+                if debug_drops:
+                    rr  = signals.get('recruiter_response_rate', 'n/a')
+                    la  = signals.get('last_active_date', 'n/a')
+                    otw = signals.get('open_to_work_flag', False)
+                    print(f"[G2-DROP] {cid} | recruiter_response_rate={rr}  last_active={la}  open_to_work={otw}")
                 continue
 
             # Gate 3 — score
@@ -303,4 +346,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    # Pass --debug as a CLI argument to see per-candidate drop reasons:
+    #   python main.py --debug
+    debug = "--debug" in sys.argv
+    main(debug_drops=debug)
