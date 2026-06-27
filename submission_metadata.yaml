@@ -1,0 +1,300 @@
+# =============================================================================
+#  REDROB DATA & AI HACKATHON — SUBMISSION METADATA
+#  Team  : RecruitIQ_Engineers
+#  Task  : Senior AI Engineer Candidate Ranking (100k → Top 100)
+# =============================================================================
+
+# ── 1. TEAM INFORMATION ──────────────────────────────────────────────────────
+
+team:
+  name: RecruitIQ_Engineers
+  members:
+    - name: Kartik Kapri
+      role: Lead AI Solutions Architect & Engineer
+      email: Kartikkapri817@gmail.com
+      github: https://github.com/kartikkapri
+  primary_contact: Kartikkapri817@gmail.com
+
+
+# ── 2. PROJECT LINKS ─────────────────────────────────────────────────────────
+
+links:
+  repository:    https://github.com/kartikkapri/recruit-iq
+  sandbox_colab: https://colab.research.google.com/drive/1xf9P310ZEkR1UOnKeUJknyr2Ukv4_jTi?usp=sharing
+  submission_csv: team_submission.csv   # relative path from repo root
+
+
+# ── 3. REPRODUCTION ──────────────────────────────────────────────────────────
+
+reproduction:
+  language:        Python
+  version:         "3.10"
+  entry_point:     main.py
+  reproduce_cmd:   python main.py
+  debug_cmd:       python main.py --debug   # prints per-candidate drop reasons to stdout
+  dependencies:
+    stdlib_only: true                        # json, csv, os, datetime — zero pip installs
+    external_packages: []
+  input_file:      data/candidates.jsonl    # 100,000-line JSONL, not committed to repo
+  output_file:     team_submission.csv      # 100 rows, 4 columns: candidate_id, rank, score, reasoning
+  notes: >
+    The data/ directory is excluded via .gitignore (data/, *.jsonl, *.gz).
+    Place candidates.jsonl inside data/ before running. No internet access
+    is required or used at any point during execution.
+
+
+# ── 4. PERFORMANCE METRICS ───────────────────────────────────────────────────
+
+performance:
+  total_candidates_processed: 100_000
+  wall_time_seconds:          26.88
+  wall_time_human:            "~27 seconds"
+  time_per_candidate_ms:      0.27
+  output_rows:                100
+
+  pipeline_throughput:
+    gate1_dropped:   10_925   # Honeypot & keyword-stuffer filter
+    gate2_dropped:   25_165   # Behavioral ghost filter
+    gate3_scored:    63_910   # Candidates that reached the scorer
+    top_n_selected: 100
+
+  top_candidate:
+    candidate_id:   CAND_0055992
+    rank:           1
+    score:          96.3092
+    reasoning: >
+      AI Engineer with 16.9 yrs exp; top skills: Information Retrieval, MLflow,
+      FAISS; interview rate: 91%; recruiter response: 72%.
+
+  score_range:
+    rank_1_score:   96.3092
+    rank_100_score: 53.0158
+
+
+# ── 5. INFRASTRUCTURE ────────────────────────────────────────────────────────
+
+infrastructure:
+  execution_mode:       CPU-only
+  cpu_cores:            8
+  ram_gb:               16
+  os:                   Windows
+  network_usage:        none              # zero outbound calls at runtime
+  memory_strategy:      streaming         # line-by-line gzip.open / open; never full dataset in RAM
+  memory_complexity:    O(1)              # input stream + fixed-size top-100 buffer
+  gpu_required:         false
+  cloud_required:       false
+  external_apis_used:   []
+
+
+# ── 6. METHODOLOGY — 3-GATE PIPELINE ─────────────────────────────────────────
+
+methodology:
+  architecture: 3-Gate CPU-Optimized Streaming Pipeline
+
+  gate_1:
+    name:        Honeypot & Keyword-Stuffer Filter (Trap Door)
+    type:        Hard Drop — candidate is eliminated, not scored
+    rules:
+      skill_duration_check:
+        description: >
+          Each skill's duration_months must not exceed
+          (years_of_experience × 12) + GRACE_PERIOD.
+          A skill timeline that is physically impossible signals profile inflation.
+        grace_period_months: 12          # relaxed from initial 6 to reduce false-positives
+        example_drop: >
+          Candidate with yoe=1.1 (13 months) listing a skill with duration=34 months
+          exceeds 13+12=25 month limit → dropped as honeypot.
+      keyword_stuffer_check:
+        description: >
+          A candidate whose current_title contains Sales, HR, Marketing, or Content
+          AND whose skills list contains 3 or more entries from the AI skills set
+          is classified as a keyword stuffer and dropped.
+        non_tech_title_keywords: [sales, hr, marketing, content]
+        ai_skills_threshold:     3
+        ai_skills_set:
+          - rag
+          - pinecone
+          - pytorch
+          - faiss
+          - langchain
+          - embeddings
+          - vector search
+          - llm
+          - fine-tuning llms
+          - hugging face transformers
+          - sentence transformers
+          - mlops
+          - kubeflow
+          - mlflow
+          - recommendation systems
+          - nlp
+          - information retrieval
+
+  gate_2:
+    name:        Behavioral Ghost Filter
+    type:        Hard Drop — candidate is eliminated, not scored
+    rules:
+      recruiter_response_rate:
+        threshold:   0.20
+        condition:   drop if recruiter_response_rate < 0.20
+      inactivity_check:
+        condition: >
+          Drop if last_active_date is more than 6 months before the cutoff date
+          AND open_to_work_flag is False. Candidates inactive but actively seeking
+          are retained.
+        cutoff_date: "2026-06-01"
+        inactivity_window_months: 6
+
+  gate_3:
+    name:        Rule-Based Weighted Scorer
+    type:        Score + Rank — produces final numeric score per candidate
+    scoring_components:
+      skill_score:
+        method: >
+          Per-skill weighted sum. Each matching skill earns
+          SKILL_WEIGHT × PROFICIENCY_MULTIPLIER + endorsement_bonus.
+          Capped endorsement bonus: (min(endorsements, 50) / 50) × 0.5.
+          Verified Redrob assessment scores add up to 3.0 bonus points.
+        proficiency_multipliers:
+          expert:       1.4
+          advanced:     1.2
+          intermediate: 1.0
+          beginner:     0.7
+        top_weighted_skills:
+          rag:                    5.0
+          llm:                    4.5
+          fine-tuning llms:       4.5
+          embeddings:             4.5
+          hugging face transformers: 4.5
+          vector search:          4.0
+          faiss:                  4.0
+          pinecone:               4.0
+          langchain:              4.0
+          peft:                   4.0
+          information retrieval:  4.0
+          pytorch:                4.0
+          sentence transformers:  4.0
+
+      experience_score:
+        sweet_spot_years: "5–12"
+        formula: >
+          yoe >= 5 → min(yoe, 12) × 1.0  (max 12 pts).
+          yoe <  5 → yoe × 0.5           (penalised).
+
+      title_multiplier:
+        application: multiplied against the full base score (not additive)
+        values:
+          ml engineer:                     1.30
+          machine learning engineer:       1.30
+          ai engineer:                     1.30
+          nlp engineer:                    1.25
+          applied ml engineer:             1.25
+          recommendation systems engineer: 1.25
+          search engineer:                 1.20
+          research engineer:               1.20
+          data scientist:                  1.15
+          data engineer:                   1.15
+          backend engineer:                1.10
+          software engineer:               1.05
+          full stack developer:            1.05
+          default (no match):              1.00
+
+      education_score:
+        tier_bonuses:
+          tier_1: 3.0    # IIT, IISc equivalents
+          tier_2: 1.5
+          tier_3: 0.5
+          tier_4: 0.0
+        ai_field_bonus: 1.5   # awarded when field_of_study matches AI/ML/CS/DS/IT
+        cap:            6.0
+
+      certification_bonus:
+        points_each: 0.5
+        cap:         2.0
+
+      behavioral_signals:
+        github_activity:       "max(score, 0) / 100 × 3.0  →  max 3.0 pts"
+        profile_completeness:  "score / 100 × 2.0           →  max 2.0 pts"
+        recruiter_response:    "rate × 2.0                  →  max ~2.0 pts"
+
+      behavioral_multiplier:
+        signal:  interview_completion_rate
+        formula: final_score = base_score × max(interview_completion_rate, 0.10)
+        rationale: >
+          Candidates who complete interviews are prioritised. The 0.10 floor
+          prevents high-scoring candidates with missing ICR data from scoring zero.
+
+
+# ── 7. AI TOOLS USED ─────────────────────────────────────────────────────────
+
+ai_tools_used:
+  - name:    Amazon Q Developer
+    purpose: Architecture design, gate logic review, code generation, Git workflow automation
+  - name:    Claude (Anthropic)
+    purpose: Filter logic optimization, scoring weight calibration, YAML schema design
+
+
+# ── 8. DESIGN DECISIONS & TRADE-OFFS ─────────────────────────────────────────
+
+design_decisions:
+
+  no_ml_models_at_runtime:
+    decision: Pure rule-based scoring; no sklearn TF-IDF, no embedding models loaded
+    rationale: >
+      Satisfies the strict CPU-only / no-network / under-5-minute constraints.
+      sklearn TF-IDF vectorising 100k documents would add ~45–90 seconds and
+      require corpus fitting before scoring, violating the streaming requirement.
+
+  streaming_architecture:
+    decision: Process one JSONL line at a time via open() iterator
+    rationale: >
+      O(1) memory footprint regardless of dataset size. The only in-memory
+      structure is the top-N candidates list (max 100 dicts after sorting).
+
+  grace_period_12_months:
+    decision: Skill duration grace period set to 12 months (relaxed from initial 6)
+    rationale: >
+      A 6-month grace dropped ~15k candidates including legitimate profiles
+      where skills were acquired through bootcamps, freelance work, or education
+      that overlaps with or predates formal employment. 12 months reduces
+      false-positive drops from 15,090 to 10,925 while still catching
+      obviously fabricated timelines (e.g., skill claimed for 88 months on
+      a 6-year career).
+
+  interview_completion_rate_as_multiplier:
+    decision: Apply ICR as a final score multiplier, not an additive component
+    rationale: >
+      A multiplicative signal captures the behavioural quality of a candidate
+      holistically. A technically excellent candidate who never completes
+      interviews is a bad hire regardless of skill score.
+
+  title_multiplier_not_filter:
+    decision: Job title affects score via multiplier; it does not hard-filter
+    rationale: >
+      Career-switchers and non-standard title holders (e.g., "Applied Scientist",
+      "Search Engineer") may be excellent AI Engineers. Hard-filtering on title
+      would introduce bias and reduce pool quality.
+
+
+# ── 9. OUTPUT FORMAT ─────────────────────────────────────────────────────────
+
+output:
+  file:    team_submission.csv
+  rows:    100
+  columns:
+    candidate_id:
+      type:        string
+      description: Unique identifier from the source dataset (e.g. CAND_0055992)
+    rank:
+      type:        integer
+      range:       1–100
+      description: Descending rank by final_score; rank 1 = best match
+    score:
+      type:        float
+      precision:   4 decimal places
+      range:       "53.0158 – 96.3092  (observed in this run)"
+      description: Composite weighted score after all three gates and multipliers
+    reasoning:
+      type:        string
+      format:      "{title} with {yoe} yrs exp; top skills: {s1}, {s2}, {s3}; interview rate: {icr}%; recruiter response: {rr}%."
+      description: Human-readable one-sentence justification for the ranking
