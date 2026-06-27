@@ -1,0 +1,21 @@
+# Dataset files — never commit large data assets
+data/
+*.gz
+*.jsonl
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# IDE / OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
